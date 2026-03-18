@@ -888,11 +888,92 @@
             gap: 8px;
         }
 
+        /* ===== Not-Taken Modal ===== */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: modal-fade-in 0.15s ease;
+        }
+        @keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+        .modal-panel {
+            background: white;
+            border-radius: var(--radius-lg);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            width: 480px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            animation: modal-slide-up 0.2s ease;
+        }
+        @keyframes modal-slide-up { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        .modal-header h3 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+        .modal-header .modal-count {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--red-500);
+            background: var(--red-50);
+            padding: 2px 10px;
+            border-radius: 100px;
+            margin-left: 10px;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--gray-400);
+            font-size: 22px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            line-height: 1;
+            transition: all var(--transition);
+        }
+        .modal-close:hover { background: var(--gray-100); color: var(--gray-600); }
+        .modal-body {
+            padding: 16px 24px 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-student-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .modal-student-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            transition: background var(--transition);
+        }
+        .modal-student-item:nth-child(even) { background: var(--gray-50); }
+        .modal-student-item:hover { background: var(--gray-100); }
+        .modal-student-name { font-weight: 600; color: var(--gray-800); }
+        .modal-student-id { font-size: 12px; color: var(--gray-500); }
+
         /* ===== Print styles ===== */
         @media print {
             .top-bar, .upload-card, .tabs, .filters-bar, .search-area,
             .btn-secondary, .export-row, .stat-hint, .instructions-toggle,
-            .instructions-body, .upload-body { display: none !important; }
+            .instructions-body, .upload-body, .modal-overlay { display: none !important; }
             body { background: white; }
             .container { padding: 0; max-width: 100%; }
             .main-panel { border: none; box-shadow: none; }
@@ -1151,6 +1232,19 @@
                     <div class="empty-state-icon">&#128202;</div>
                     <p>Add course codes above and click Analyze to see cohort completion patterns across semesters.</p>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Not-Taken Modal -->
+    <div class="modal-overlay hidden" id="notTakenModal" onclick="if(event.target===this)closeNotTakenModal()">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <div><h3 id="modalTitle">Not Taken</h3></div>
+                <button class="modal-close" onclick="closeNotTakenModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-student-list" id="modalStudentList"></div>
             </div>
         </div>
     </div>
@@ -1645,7 +1739,7 @@
             }
 
             // Store for export
-            lastCohortExport = { resolvedCourses, courseData, sortedSemesterKeys, allSemesters, cohortSize };
+            lastCohortExport = { resolvedCourses, courseData, sortedSemesterKeys, allSemesters, cohortSize, cohortIds };
 
             let html = '';
             if (resolvedCourses.length === 1) {
@@ -1686,7 +1780,7 @@
             const ntBarWidth = `${Math.max(notTakenPct * 1, 0)}%`;
             const ntIntensity = Math.max(0.2, notTakenCount / cohortSize);
             const ntColor = `rgba(239, 68, 68, ${ntIntensity})`;
-            html += `<div class="cohort-row" style="margin-top:10px;padding-top:10px;border-top:2px dashed var(--gray-200);">`;
+            html += `<div class="cohort-row" style="margin-top:10px;padding-top:10px;border-top:2px dashed var(--gray-200);cursor:pointer;" onclick="showNotTakenModal('${courseCode.replace(/'/g, "\\'")}')">`;
             html += `<div class="cohort-semester-label" style="color:var(--red-500);font-weight:700;">Not Taken</div>`;
             html += `<div class="cohort-bar-track"><div class="cohort-bar" data-width="${ntBarWidth}" style="background:${ntColor};">`;
             if (parseFloat(notTakenPct) > 12) html += `<span class="cohort-bar-label">${notTakenPct}%</span>`;
@@ -1732,11 +1826,59 @@
                 const ntI = Math.max(0.15, ntCount / cohortSize);
                 const ntBg = `rgba(239, 68, 68, ${ntI})`;
                 const ntTc = ntI > 0.5 ? 'white' : '#7f1d1d';
-                html += `<td><div class="heatmap-cell" style="background:${ntBg};color:${ntTc};" title="${displayName} - Not Taken: ${ntPct}% (${ntCount} of ${cohortSize})">${ntPct}%</div></td></tr>`;
+                html += `<td><div class="heatmap-cell" style="background:${ntBg};color:${ntTc};cursor:pointer;" title="${displayName} - Not Taken: ${ntPct}% (${ntCount} of ${cohortSize}) — Click to view" onclick="showNotTakenModal('${courseCode.replace(/'/g, "\\'")}')">${ntPct}%</div></td></tr>`;
             }
             html += '</tbody></table></div>';
             return html;
         }
+
+        // =============================================
+        // Not-Taken Modal
+        // =============================================
+        function showNotTakenModal(courseCode) {
+            if (!lastCohortExport) return;
+            const { courseData, sortedSemesterKeys, cohortIds } = lastCohortExport;
+            const semMap = courseData[courseCode] || {};
+
+            // Compute taken students across all semesters
+            const takenStudents = new Set();
+            for (const key of sortedSemesterKeys) {
+                const data = semMap[key];
+                if (data) data.students.forEach(id => takenStudents.add(id));
+            }
+
+            // Not-taken = cohort members not in takenStudents
+            const notTakenIds = cohortIds.filter(id => !takenStudents.has(id));
+            const students = notTakenIds.map(id => allStudents.get(id)).filter(Boolean);
+            students.sort((a, b) => {
+                const lc = a.lastName.localeCompare(b.lastName);
+                return lc !== 0 ? lc : a.firstName.localeCompare(b.firstName);
+            });
+
+            const courseName = courseNames.get(courseCode);
+            const title = courseName ? `${courseCode}: ${courseName}` : courseCode;
+            document.getElementById('modalTitle').innerHTML = `Not Taken — ${title} <span class="modal-count">${students.length} student${students.length !== 1 ? 's' : ''}</span>`;
+
+            let html = '';
+            if (students.length === 0) {
+                html = '<div class="no-results">All students in this cohort have taken this course.</div>';
+            } else {
+                students.forEach(s => {
+                    html += `<div class="modal-student-item"><span class="modal-student-name">${s.lastName}, ${s.firstName}</span><span class="modal-student-id">${s.andrewId}</span></div>`;
+                });
+            }
+            document.getElementById('modalStudentList').innerHTML = html;
+            document.getElementById('notTakenModal').classList.remove('hidden');
+        }
+
+        function closeNotTakenModal() {
+            document.getElementById('notTakenModal').classList.add('hidden');
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeNotTakenModal();
+        });
 
         // =============================================
         // Suggestions (Course View)
